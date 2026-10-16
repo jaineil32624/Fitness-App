@@ -2,7 +2,7 @@
 
 Move smarter. Get stronger.
 
-[![Download for Android](https://img.shields.io/badge/%E2%96%B6%20DOWNLOAD%20FOR-ANDROID-2FA85A?style=for-the-badge&logo=android&logoColor=white)](https://github.com/jaineil32624/Fitness-App/raw/refs/heads/main/Repwise.apk)
+[![Download for Android](.github/assets/download-android.svg)](https://github.com/jaineil32624/Fitness-App/raw/refs/heads/main/Repwise.apk)
 
 An offline-first fitness coach that uses your camera to track exercises, count reps, and give real-time form feedback. Your workouts stay on your device.
 
