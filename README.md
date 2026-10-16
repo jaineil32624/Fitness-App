@@ -4,6 +4,10 @@ Repwise is an offline-first Android fitness coach. Its live workout flow uses Ca
 
 > Pose estimates and calorie figures are guidance, not medical advice or a substitute for a qualified trainer. Use a clear, well-lit space and stop if you feel pain or dizziness.
 
+## Install on Android
+
+**[Download the latest Repwise APK](https://github.com/jaineil32624/Fitness-App/raw/refs/heads/main/Repwise.apk)** from this repository. On your Android device, open the downloaded APK and follow Android's prompts to allow installation from your browser or file manager. The app does not install updates silently.
+
 ## Features
 
 - Live camera pose estimation and rep counting for squats, push-ups, jumping jacks, lunges, and planks.
