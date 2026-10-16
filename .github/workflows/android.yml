@@ -24,6 +24,8 @@ jobs:
       - uses: android-actions/setup-android@v3
       - name: Install Android SDK
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Run unit tests
+        run: bash ./gradlew --no-daemon :app:testDebugUnitTest
       - name: Configure release signing
         if: startsWith(github.ref, 'refs/tags/v') && env.HAS_RELEASE_KEY == 'true'
         env:

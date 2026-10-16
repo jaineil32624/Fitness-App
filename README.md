@@ -12,9 +12,11 @@ Open the APK on your Android device and follow Android's prompts to allow instal
 
 ## Features
 
-- Live camera pose estimation and rep counting for squats, push-ups, jumping jacks, lunges, and planks.
+- Live camera pose estimation and rep counting for squats, push-ups, jumping jacks, lunges, planks, crunches, shoulder presses, mountain climbers, glute bridges, and high knees.
 - Form cues based on visible joint angles and body alignment.
-- Session timer, estimated calories, and locally stored workout history.
+- Separate elapsed and pose-verified active timers; rests and losing the tracked pose do not add active time or calorie estimates.
+- Opt-in generated workout music that works offline, plus locally stored workout history.
+- Unit tests cover active-time behavior: movement detection, tracking loss, recovery grace, and plank alignment.
 - Dashboard, weekly progress, achievements, profile settings, and exercise recommendations.
 - Check and download APK releases from a configurable GitHub repository.
 - Core workout analysis runs on-device; internet is only needed for release checks/downloads.

@@ -14,6 +14,7 @@ data class WorkoutRecord(
     val seconds: Int,
     val calories: Int,
     val date: String = LocalDate.now().format(DateTimeFormatter.ISO_DATE),
+    val activeSeconds: Int = seconds,
 )
 
 data class UserProfile(
@@ -40,6 +41,7 @@ class WorkoutStore(context: Context) {
                 seconds = item.optInt("seconds"),
                 calories = item.optInt("calories"),
                 date = item.optString("date"),
+                activeSeconds = item.optInt("activeSeconds", item.optInt("seconds")),
             )
         }.sortedByDescending { it.date }
     }
@@ -56,7 +58,8 @@ class WorkoutStore(context: Context) {
                     .put("reps", workout.reps)
                     .put("seconds", workout.seconds)
                     .put("calories", workout.calories)
-                    .put("date", workout.date),
+                    .put("date", workout.date)
+                    .put("activeSeconds", workout.activeSeconds),
             )
         }
         preferences.edit().putString("workouts", array.toString()).apply()

@@ -49,6 +49,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.MusicOff
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Timer
@@ -95,6 +97,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.pose.PoseDetection
 import com.google.mlkit.vision.pose.defaults.PoseDetectorOptions
+import com.repwise.audio.WorkoutMusicPlayer
 import com.repwise.camera.ExerciseType
 import com.repwise.camera.LandmarkPoint
 import com.repwise.camera.PoseFeedback
@@ -144,7 +147,9 @@ private fun RepwiseApp() {
     var selectedExercise by remember { mutableStateOf<ExerciseType?>(null) }
     var workoutStarted by remember { mutableStateOf(false) }
     var seconds by remember { mutableIntStateOf(0) }
+    var activeSeconds by remember { mutableIntStateOf(0) }
     var feedback by remember { mutableStateOf(PoseFeedback(emptyMap(), "Position your full body in frame", 0, false, false)) }
+    val isActivelyMoving by androidx.compose.runtime.rememberUpdatedState(feedback.active)
     var statusMessage by remember { mutableStateOf<String?>(null) }
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) workoutStarted = true else statusMessage = "Camera access is needed for live pose tracking."
@@ -155,6 +160,7 @@ private fun RepwiseApp() {
         if (workoutStarted) while (true) {
             delay(1_000)
             seconds++
+            if (isActivelyMoving) activeSeconds++
         }
     }
 
@@ -174,16 +180,26 @@ private fun RepwiseApp() {
                 exercise = selectedExercise!!,
                 weightKg = profile.weightKg,
                 seconds = seconds,
+                activeSeconds = activeSeconds,
                 feedback = feedback,
                 onFeedback = { feedback = it },
                 onEnd = {
                     val exercise = selectedExercise!!
-                    val calories = (exercise.met * profile.weightKg * (seconds / 3600f)).toInt().coerceAtLeast(1)
-                    store.save(WorkoutRecord(exercise = exercise.title, reps = feedback.reps, seconds = seconds, calories = calories))
+                    val calories = (exercise.met * profile.weightKg * (activeSeconds / 3600f)).toInt()
+                    store.save(
+                        WorkoutRecord(
+                            exercise = exercise.title,
+                            reps = feedback.reps,
+                            seconds = seconds,
+                            calories = calories,
+                            activeSeconds = activeSeconds,
+                        ),
+                    )
                     records = store.records()
                     workoutStarted = false
                     selectedExercise = null
                     seconds = 0
+                    activeSeconds = 0
                     feedback = PoseFeedback(emptyMap(), "Position your full body in frame", 0, false, false)
                     statusMessage = "Workout saved. Nice work!"
                     tab = Tab.HOME
@@ -290,7 +306,7 @@ private fun HomeScreen(
 ) {
     val week = records.filter { it.date >= java.time.LocalDate.now().minusDays(6).toString() }
     val workoutCount = week.size
-    val totalMinutes = week.sumOf { it.seconds } / 60
+    val totalMinutes = week.sumOf { it.activeSeconds } / 60
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(horizontal = 20.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 26.dp, bottom = 24.dp),
@@ -422,6 +438,7 @@ private fun LiveWorkoutScreen(
     exercise: ExerciseType,
     weightKg: Float,
     seconds: Int,
+    activeSeconds: Int,
     feedback: PoseFeedback,
     onFeedback: (PoseFeedback) -> Unit,
     onEnd: () -> Unit,
@@ -429,6 +446,8 @@ private fun LiveWorkoutScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     var previewView by remember { mutableStateOf<PreviewView?>(null) }
+    val musicPlayer = remember { WorkoutMusicPlayer() }
+    var musicEnabled by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().background(Ink)) {
         Row(
             Modifier.fillMaxWidth().padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 12.dp, start = 18.dp, end = 18.dp, bottom = 12.dp),
@@ -437,7 +456,22 @@ private fun LiveWorkoutScreen(
         ) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "End workout", tint = Color.White, modifier = Modifier.clickable(onClick = onEnd))
             Text(exercise.title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Text("LIVE", color = Color(0xFF8ED5A9), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(
+                    if (musicEnabled) Icons.Default.MusicNote else Icons.Default.MusicOff,
+                    contentDescription = if (musicEnabled) "Pause workout music" else "Play workout music",
+                    tint = if (musicEnabled) Color(0xFF8ED5A9) else Color.White,
+                    modifier = Modifier.clickable {
+                        try {
+                            if (musicEnabled) musicPlayer.pause() else musicPlayer.play()
+                            musicEnabled = !musicEnabled
+                        } catch (error: Exception) {
+                            onFeedback(feedback.copy(message = error.message ?: "Workout music could not start"))
+                        }
+                    },
+                )
+                Text("LIVE", color = Color(0xFF8ED5A9), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
         }
         Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp).clip(RoundedCornerShape(24.dp)).background(Color(0xFF26342D))) {
             AndroidView(
@@ -460,11 +494,37 @@ private fun LiveWorkoutScreen(
                 Text(feedback.message, Modifier.padding(horizontal = 12.dp, vertical = 10.dp), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
         }
-        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-            WorkoutStat(if (exercise.isTimed) "SECONDS HELD" else "REPS", if (exercise.isTimed) feedback.reps.toString() else feedback.reps.toString())
-            WorkoutStat("DURATION", formatDuration(seconds))
-            WorkoutStat("CALORIES", ((exercise.met * weightKg * seconds / 3600f).toInt()).toString())
+        Row(
+            Modifier.fillMaxWidth().padding(top = 10.dp, start = 20.dp, end = 20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                if (feedback.active) Icons.Default.CheckCircle else Icons.Default.Timer,
+                contentDescription = null,
+                tint = if (feedback.active) Color(0xFF8EE0A9) else Color(0xFFB3C0B8),
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(7.dp))
+            Text(
+                if (feedback.active) "MOVEMENT DETECTED · ACTIVE TIME COUNTING"
+                else "WAITING FOR MOVEMENT · ELAPSED TIMER RUNNING",
+                color = if (feedback.active) Color(0xFF8EE0A9) else Color(0xFFB3C0B8),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = .35.sp,
+            )
         }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+            WorkoutStat(if (exercise.isTimed) "SECONDS HELD" else "REPS", feedback.reps.toString())
+            WorkoutStat("ACTIVE", formatDuration(activeSeconds))
+            WorkoutStat("ELAPSED", formatDuration(seconds))
+        }
+        Text(
+            "~${(exercise.met * weightKg * activeSeconds / 3600f).toInt()} active kcal • estimate",
+            color = Color(0xFFB3C0B8),
+            fontSize = 12.sp,
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 12.dp),
+        )
         Button(
             onClick = onEnd,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 18.dp).height(54.dp),
@@ -477,6 +537,9 @@ private fun LiveWorkoutScreen(
         val camera = view?.let { CameraSession(context, lifecycleOwner, it, exercise, onFeedback) }
         camera?.start()
         onDispose { camera?.close() }
+    }
+    DisposableEffect(musicPlayer) {
+        onDispose { musicPlayer.close() }
     }
 }
 
@@ -593,7 +656,7 @@ private class CameraSession(
 @Composable
 private fun ProgressScreen(records: List<WorkoutRecord>, weeklyGoal: Int) {
     val week = records.filter { it.date >= java.time.LocalDate.now().minusDays(6).toString() }
-    val weekMinutes = week.sumOf { it.seconds } / 60
+    val weekMinutes = week.sumOf { it.activeSeconds } / 60
     val streak = calculateStreak(records)
     ScreenColumn(scrollable = true) {
         Text("Your progress", fontSize = 27.sp, fontWeight = FontWeight.Bold, color = Ink)
@@ -663,7 +726,11 @@ private fun HistoryRow(record: WorkoutRecord) {
         Column(Modifier.weight(1f)) {
             Text(record.exercise, fontWeight = FontWeight.SemiBold)
             val movement = if (record.exercise == ExerciseType.PLANK.title) "${record.reps} sec held" else "${record.reps} reps"
-            Text("$movement  •  ${formatDuration(record.seconds)}  •  ${record.calories} kcal", color = Muted, fontSize = 12.sp)
+            Text(
+                "$movement  •  ${formatDuration(record.activeSeconds)} active / ${formatDuration(record.seconds)} elapsed  •  ${record.calories} kcal",
+                color = Muted,
+                fontSize = 12.sp,
+            )
         }
         Text(record.date, color = Muted, fontSize = 11.sp)
     }

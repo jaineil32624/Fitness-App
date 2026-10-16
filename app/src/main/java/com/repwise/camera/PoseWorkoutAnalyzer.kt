@@ -12,6 +12,11 @@ enum class ExerciseType(val title: String, val met: Float, val isTimed: Boolean 
     JUMPING_JACK("Jumping jacks", 8.0f),
     LUNGE("Lunges", 5.0f),
     PLANK("Plank", 3.5f, true),
+    CRUNCH("Crunches", 4.0f),
+    SHOULDER_PRESS("Shoulder presses", 5.0f),
+    MOUNTAIN_CLIMBER("Mountain climbers", 8.0f),
+    GLUTE_BRIDGE("Glute bridges", 4.0f),
+    HIGH_KNEES("High knees", 8.0f),
 }
 
 data class LandmarkPoint(val x: Float, val y: Float)
@@ -22,11 +27,31 @@ data class PoseFeedback(
     val reps: Int,
     val visible: Boolean,
     val goodForm: Boolean,
+    val active: Boolean = false,
 )
+
+internal object ActivityWindow {
+    fun isActive(
+        exercise: ExerciseType,
+        visible: Boolean,
+        goodForm: Boolean,
+        moved: Boolean,
+        lastMotionAt: Long,
+        nowMs: Long,
+    ): Boolean {
+        if (!visible) return false
+        if (exercise == ExerciseType.PLANK) return goodForm
+        if (moved) return true
+        return lastMotionAt > 0 && nowMs - lastMotionAt <= 1_500
+    }
+}
 
 class PoseWorkoutAnalyzer(private val exercise: ExerciseType) {
     private var isDown = false
     private var isOpen = false
+    private var lastMountainClimberSide = 0
+    private var lastMotionFeatures: Map<String, Float>? = null
+    private var lastMotionAt = 0L
     private var lastTimedRepAt = 0L
     private var reps = 0
 
@@ -68,13 +93,20 @@ class PoseWorkoutAnalyzer(private val exercise: ExerciseType) {
         val shoulderWidth = if (shoulderL != null && shoulderR != null) distance(shoulderL.x, shoulderL.y, shoulderR.x, shoulderR.y) else null
         val footWidth = if (ankleL != null && ankleR != null) distance(ankleL.x, ankleL.y, ankleR.x, ankleR.y) else null
         val legsWide = shoulderWidth != null && footWidth != null && footWidth > shoulderWidth * 1.45f
-        val kneeAngle = averageAngle(
-            angle(PoseLandmark.LEFT_HIP, PoseLandmark.LEFT_KNEE, PoseLandmark.LEFT_ANKLE),
-            angle(PoseLandmark.RIGHT_HIP, PoseLandmark.RIGHT_KNEE, PoseLandmark.RIGHT_ANKLE),
-        )
+        val leftKneeAngle = angle(PoseLandmark.LEFT_HIP, PoseLandmark.LEFT_KNEE, PoseLandmark.LEFT_ANKLE)
+        val rightKneeAngle = angle(PoseLandmark.RIGHT_HIP, PoseLandmark.RIGHT_KNEE, PoseLandmark.RIGHT_ANKLE)
+        val kneeAngle = averageAngle(leftKneeAngle, rightKneeAngle)
         val elbowAngle = averageAngle(
             angle(PoseLandmark.LEFT_SHOULDER, PoseLandmark.LEFT_ELBOW, PoseLandmark.LEFT_WRIST),
             angle(PoseLandmark.RIGHT_SHOULDER, PoseLandmark.RIGHT_ELBOW, PoseLandmark.RIGHT_WRIST),
+        )
+        val hipAngle = averageAngle(
+            angle(PoseLandmark.LEFT_SHOULDER, PoseLandmark.LEFT_HIP, PoseLandmark.LEFT_KNEE),
+            angle(PoseLandmark.RIGHT_SHOULDER, PoseLandmark.RIGHT_HIP, PoseLandmark.RIGHT_KNEE),
+        )
+        val torsoAngle = averageAngle(
+            angle(PoseLandmark.LEFT_SHOULDER, PoseLandmark.LEFT_HIP, PoseLandmark.LEFT_KNEE),
+            angle(PoseLandmark.RIGHT_SHOULDER, PoseLandmark.RIGHT_HIP, PoseLandmark.RIGHT_KNEE),
         )
         val shoulder = shoulderL ?: shoulderR
         val hip = hipL ?: hipR
@@ -100,11 +132,12 @@ class PoseWorkoutAnalyzer(private val exercise: ExerciseType) {
                 }
             }
             ExerciseType.LUNGE -> {
-                if (kneeAngle != null) {
-                    feedback = if (kneeAngle < 105) "Nice lunge — keep your front knee over your ankle" else "Step back and lower your hips with control"
-                    goodForm = kneeAngle in 65.0..125.0
-                    if (kneeAngle < 108) isDown = true
-                    if (kneeAngle > 150 && isDown) { reps++; isDown = false }
+                val frontKneeAngle = listOfNotNull(leftKneeAngle, rightKneeAngle).minOrNull()
+                if (frontKneeAngle != null) {
+                    feedback = if (frontKneeAngle < 105) "Nice lunge — keep your front knee over your ankle" else "Step back and lower your hips with control"
+                    goodForm = frontKneeAngle in 65.0..125.0
+                    if (frontKneeAngle < 108) isDown = true
+                    if (frontKneeAngle > 150 && isDown) { reps++; isDown = false }
                 }
             }
             ExerciseType.PUSH_UP -> {
@@ -138,8 +171,94 @@ class PoseWorkoutAnalyzer(private val exercise: ExerciseType) {
                     lastTimedRepAt = nowMs
                 }
             }
+            ExerciseType.CRUNCH -> {
+                if (torsoAngle != null) {
+                    feedback = if (torsoAngle < 100) "Squeeze at the top, and keep your neck relaxed"
+                    else "Lift your shoulders with control; don't pull on your neck"
+                    goodForm = torsoAngle in 45.0..105.0
+                    if (torsoAngle < 85) isDown = true
+                    if (torsoAngle > 115 && isDown) { reps++; isDown = false }
+                }
+            }
+            ExerciseType.SHOULDER_PRESS -> {
+                if (elbowAngle != null && shoulderMidY != null && wristL != null && wristR != null) {
+                    val pressedUp = armRaised
+                    feedback = if (pressedUp) "Press overhead without arching your back"
+                    else "Press both hands overhead with control"
+                    goodForm = pressedUp
+                    if (!pressedUp && elbowAngle < 125) isDown = true
+                    if (pressedUp && isDown) { reps++; isDown = false }
+                }
+            }
+            ExerciseType.MOUNTAIN_CLIMBER -> {
+                val leftBent = (leftKneeAngle ?: 180.0) < 125
+                val rightBent = (rightKneeAngle ?: 180.0) < 125
+                val side = when {
+                    leftBent && rightBent -> 0
+                    leftBent -> 1
+                    rightBent -> 2
+                    else -> 0
+                }
+                feedback = if (side != 0) "Drive your knee forward; keep your shoulders stacked"
+                else "Keep a strong plank and bring your knees forward one at a time"
+                goodForm = bodyLineAngle != null && bodyLineAngle < 25 && side != 0
+                if (side != 0 && side != lastMountainClimberSide) {
+                    reps++
+                    lastMountainClimberSide = side
+                }
+            }
+            ExerciseType.GLUTE_BRIDGE -> {
+                if (hipAngle != null) {
+                    feedback = if (hipAngle > 150) "Squeeze your glutes at the top"
+                    else "Drive through your heels and lift your hips"
+                    goodForm = hipAngle > 145
+                    if (hipAngle < 130) isDown = true
+                    if (hipAngle > 150 && isDown) { reps++; isDown = false }
+                }
+            }
+            ExerciseType.HIGH_KNEES -> {
+                val leftAngle = angle(PoseLandmark.LEFT_HIP, PoseLandmark.LEFT_KNEE, PoseLandmark.LEFT_ANKLE)
+                val rightAngle = angle(PoseLandmark.RIGHT_HIP, PoseLandmark.RIGHT_KNEE, PoseLandmark.RIGHT_ANKLE)
+                val side = when {
+                    leftAngle != null && leftAngle < 135 && (rightAngle == null || leftAngle < rightAngle) -> 1
+                    rightAngle != null && rightAngle < 135 -> 2
+                    else -> 0
+                }
+                feedback = if (side != 0) "Nice drive — alternate knees and stay light on your feet"
+                else "Jog in place and lift each knee toward hip height"
+                goodForm = side != 0
+                if (side != 0 && side != lastMountainClimberSide) {
+                    reps++
+                    lastMountainClimberSide = side
+                }
+            }
         }
-        return PoseFeedback(points, feedback, reps, points.size >= 8, goodForm)
+        val visible = points.size >= 8
+        val motionFeatures = buildMap {
+            kneeAngle?.let { put("knee", it.toFloat()) }
+            elbowAngle?.let { put("elbow", it.toFloat()) }
+            hipAngle?.let { put("hip", it.toFloat()) }
+            torsoAngle?.let { put("torso", it.toFloat()) }
+            if (shoulderMidY != null && wristL != null && wristR != null) put("arms", if (armRaised) 100f else 0f)
+            if (shoulderWidth != null && shoulderWidth > 0 && footWidth != null) {
+                put("stance", (footWidth / shoulderWidth) * 100f)
+            }
+        }
+        val previous = lastMotionFeatures
+        val moved = visible && previous != null && motionFeatures.any { (feature, current) ->
+            previous[feature]?.let { abs(current - it) > 6f } == true
+        }
+        if (moved) lastMotionAt = nowMs
+        lastMotionFeatures = if (visible) motionFeatures else null
+        val active = ActivityWindow.isActive(
+            exercise = exercise,
+            visible = visible,
+            goodForm = goodForm,
+            moved = moved,
+            lastMotionAt = lastMotionAt,
+            nowMs = nowMs,
+        )
+        return PoseFeedback(points, feedback, reps, visible, goodForm, active)
     }
 
     private fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float =
