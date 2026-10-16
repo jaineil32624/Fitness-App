@@ -1,12 +1,14 @@
 # Repwise
 
-Repwise is an offline-first Android fitness coach. Its live workout flow uses CameraX and a bundled ML Kit pose model to estimate body landmarks on-device, count supported movements, and surface simple form cues. Workout sessions and profile settings are stored locally on the device.
+Move smarter. Get stronger.
+
+[![Download for Android](https://img.shields.io/badge/%E2%96%B6%20DOWNLOAD%20FOR-ANDROID-2FA85A?style=for-the-badge&logo=android&logoColor=white)](https://github.com/jaineil32624/Fitness-App/raw/refs/heads/main/Repwise.apk)
+
+An offline-first fitness coach that uses your camera to track exercises, count reps, and give real-time form feedback. Your workouts stay on your device.
 
 > Pose estimates and calorie figures are guidance, not medical advice or a substitute for a qualified trainer. Use a clear, well-lit space and stop if you feel pain or dizziness.
 
-## Install on Android
-
-**[Download the latest Repwise APK](https://github.com/jaineil32624/Fitness-App/raw/refs/heads/main/Repwise.apk)** from this repository. On your Android device, open the downloaded APK and follow Android's prompts to allow installation from your browser or file manager. The app does not install updates silently.
+Open the APK on your Android device and follow Android's prompts to allow installation from your browser or file manager. The app does not install updates silently.
 
 ## Features
 
