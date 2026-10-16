@@ -46,11 +46,22 @@ internal object ActivityWindow {
     }
 }
 
+internal object MotionSignal {
+    fun hasMeaningfulChange(
+        current: Map<String, Float>,
+        previous: Map<String, Float>,
+        thresholdDegrees: Float = 3f,
+    ): Boolean = current.any { (feature, value) ->
+        previous[feature]?.let { abs(value - it) >= thresholdDegrees } == true
+    }
+}
+
 class PoseWorkoutAnalyzer(private val exercise: ExerciseType) {
     private var isDown = false
     private var isOpen = false
     private var lastMountainClimberSide = 0
     private var lastMotionFeatures: Map<String, Float>? = null
+    private var lastMotionSampleAt = 0L
     private var lastMotionAt = 0L
     private var lastTimedRepAt = 0L
     private var reps = 0
@@ -245,11 +256,17 @@ class PoseWorkoutAnalyzer(private val exercise: ExerciseType) {
             }
         }
         val previous = lastMotionFeatures
-        val moved = visible && previous != null && motionFeatures.any { (feature, current) ->
-            previous[feature]?.let { abs(current - it) > 6f } == true
-        }
+        val sampleMotion = nowMs - lastMotionSampleAt >= 250
+        val moved = visible && sampleMotion && previous != null &&
+            MotionSignal.hasMeaningfulChange(motionFeatures, previous)
         if (moved) lastMotionAt = nowMs
-        lastMotionFeatures = if (visible) motionFeatures else null
+        if (visible && (previous == null || sampleMotion)) {
+            lastMotionFeatures = motionFeatures
+            lastMotionSampleAt = nowMs
+        } else if (!visible) {
+            lastMotionFeatures = null
+            lastMotionSampleAt = 0
+        }
         val active = ActivityWindow.isActive(
             exercise = exercise,
             visible = visible,
