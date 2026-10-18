@@ -2,22 +2,10 @@ package com.repwise.camera
 
 import com.google.mlkit.vision.pose.Pose
 import com.google.mlkit.vision.pose.PoseLandmark
+import com.repwise.domain.ExerciseType
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.sqrt
-
-enum class ExerciseType(val title: String, val met: Float, val isTimed: Boolean = false) {
-    SQUAT("Squats", 5.0f),
-    PUSH_UP("Push-ups", 7.0f),
-    JUMPING_JACK("Jumping jacks", 8.0f),
-    LUNGE("Lunges", 5.0f),
-    PLANK("Plank", 3.5f, true),
-    CRUNCH("Crunches", 4.0f),
-    SHOULDER_PRESS("Shoulder presses", 5.0f),
-    MOUNTAIN_CLIMBER("Mountain climbers", 8.0f),
-    GLUTE_BRIDGE("Glute bridges", 4.0f),
-    HIGH_KNEES("High knees", 8.0f),
-}
 
 data class LandmarkPoint(val x: Float, val y: Float)
 
@@ -28,7 +16,14 @@ data class PoseFeedback(
     val visible: Boolean,
     val goodForm: Boolean,
     val active: Boolean = false,
-)
+    /** Upright analysis frame size, so overlays can match the preview's crop. */
+    val imageWidth: Int = 0,
+    val imageHeight: Int = 0,
+) {
+    companion object {
+        val Searching = PoseFeedback(emptyMap(), "Position your full body in frame", 0, visible = false, goodForm = false)
+    }
+}
 
 internal object ActivityWindow {
     fun isActive(
@@ -59,26 +54,32 @@ internal object MotionSignal {
 class PoseWorkoutAnalyzer(private val exercise: ExerciseType) {
     private var isDown = false
     private var isOpen = false
-    private var lastMountainClimberSide = 0
+    private var lastAlternatingSide = 0
     private var lastMotionFeatures: Map<String, Float>? = null
     private var lastMotionSampleAt = 0L
     private var lastMotionAt = 0L
     private var lastTimedRepAt = 0L
     private var reps = 0
 
+    /** Synchronized because a camera restart (rotation, lens flip) can briefly overlap two frame threads. */
+    @Synchronized
     fun analyze(
         pose: Pose,
         nowMs: Long = System.currentTimeMillis(),
         imageWidth: Int = 640,
         imageHeight: Int = 480,
     ): PoseFeedback {
-        val points = pose.allPoseLandmarks.associate { landmark ->
+        // ML Kit always returns all 33 landmarks, guessing positions for joints it can't see.
+        // Only trust joints it believes are actually in the frame.
+        val trusted = pose.allPoseLandmarks.filter { it.inFrameLikelihood >= MIN_IN_FRAME_LIKELIHOOD }
+        val trustedTypes = trusted.mapTo(HashSet()) { it.landmarkType }
+        val points = trusted.associate { landmark ->
             landmark.landmarkType to LandmarkPoint(
                 (landmark.position.x / imageWidth.coerceAtLeast(1)).coerceIn(0f, 1f),
                 (landmark.position.y / imageHeight.coerceAtLeast(1)).coerceIn(0f, 1f),
             )
         }
-        fun point(type: Int) = pose.getPoseLandmark(type)?.position
+        fun point(type: Int) = if (type in trustedTypes) pose.getPoseLandmark(type)?.position else null
         fun angle(a: Int, b: Int, c: Int): Double? {
             val first = point(a) ?: return null
             val middle = point(b) ?: return null
@@ -112,10 +113,6 @@ class PoseWorkoutAnalyzer(private val exercise: ExerciseType) {
             angle(PoseLandmark.RIGHT_SHOULDER, PoseLandmark.RIGHT_ELBOW, PoseLandmark.RIGHT_WRIST),
         )
         val hipAngle = averageAngle(
-            angle(PoseLandmark.LEFT_SHOULDER, PoseLandmark.LEFT_HIP, PoseLandmark.LEFT_KNEE),
-            angle(PoseLandmark.RIGHT_SHOULDER, PoseLandmark.RIGHT_HIP, PoseLandmark.RIGHT_KNEE),
-        )
-        val torsoAngle = averageAngle(
             angle(PoseLandmark.LEFT_SHOULDER, PoseLandmark.LEFT_HIP, PoseLandmark.LEFT_KNEE),
             angle(PoseLandmark.RIGHT_SHOULDER, PoseLandmark.RIGHT_HIP, PoseLandmark.RIGHT_KNEE),
         )
@@ -183,12 +180,12 @@ class PoseWorkoutAnalyzer(private val exercise: ExerciseType) {
                 }
             }
             ExerciseType.CRUNCH -> {
-                if (torsoAngle != null) {
-                    feedback = if (torsoAngle < 100) "Squeeze at the top, and keep your neck relaxed"
+                if (hipAngle != null) {
+                    feedback = if (hipAngle < 100) "Squeeze at the top, and keep your neck relaxed"
                     else "Lift your shoulders with control; don't pull on your neck"
-                    goodForm = torsoAngle in 45.0..105.0
-                    if (torsoAngle < 85) isDown = true
-                    if (torsoAngle > 115 && isDown) { reps++; isDown = false }
+                    goodForm = hipAngle in 45.0..105.0
+                    if (hipAngle < 85) isDown = true
+                    if (hipAngle > 115 && isDown) { reps++; isDown = false }
                 }
             }
             ExerciseType.SHOULDER_PRESS -> {
@@ -213,9 +210,9 @@ class PoseWorkoutAnalyzer(private val exercise: ExerciseType) {
                 feedback = if (side != 0) "Drive your knee forward; keep your shoulders stacked"
                 else "Keep a strong plank and bring your knees forward one at a time"
                 goodForm = bodyLineAngle != null && bodyLineAngle < 25 && side != 0
-                if (side != 0 && side != lastMountainClimberSide) {
+                if (side != 0 && side != lastAlternatingSide) {
                     reps++
-                    lastMountainClimberSide = side
+                    lastAlternatingSide = side
                 }
             }
             ExerciseType.GLUTE_BRIDGE -> {
@@ -228,8 +225,8 @@ class PoseWorkoutAnalyzer(private val exercise: ExerciseType) {
                 }
             }
             ExerciseType.HIGH_KNEES -> {
-                val leftAngle = angle(PoseLandmark.LEFT_HIP, PoseLandmark.LEFT_KNEE, PoseLandmark.LEFT_ANKLE)
-                val rightAngle = angle(PoseLandmark.RIGHT_HIP, PoseLandmark.RIGHT_KNEE, PoseLandmark.RIGHT_ANKLE)
+                val leftAngle = leftKneeAngle
+                val rightAngle = rightKneeAngle
                 val side = when {
                     leftAngle != null && leftAngle < 135 && (rightAngle == null || leftAngle < rightAngle) -> 1
                     rightAngle != null && rightAngle < 135 -> 2
@@ -238,9 +235,9 @@ class PoseWorkoutAnalyzer(private val exercise: ExerciseType) {
                 feedback = if (side != 0) "Nice drive — alternate knees and stay light on your feet"
                 else "Jog in place and lift each knee toward hip height"
                 goodForm = side != 0
-                if (side != 0 && side != lastMountainClimberSide) {
+                if (side != 0 && side != lastAlternatingSide) {
                     reps++
-                    lastMountainClimberSide = side
+                    lastAlternatingSide = side
                 }
             }
         }
@@ -249,7 +246,6 @@ class PoseWorkoutAnalyzer(private val exercise: ExerciseType) {
             kneeAngle?.let { put("knee", it.toFloat()) }
             elbowAngle?.let { put("elbow", it.toFloat()) }
             hipAngle?.let { put("hip", it.toFloat()) }
-            torsoAngle?.let { put("torso", it.toFloat()) }
             if (shoulderMidY != null && wristL != null && wristR != null) put("arms", if (armRaised) 100f else 0f)
             if (shoulderWidth != null && shoulderWidth > 0 && footWidth != null) {
                 put("stance", (footWidth / shoulderWidth) * 100f)
@@ -275,7 +271,11 @@ class PoseWorkoutAnalyzer(private val exercise: ExerciseType) {
             lastMotionAt = lastMotionAt,
             nowMs = nowMs,
         )
-        return PoseFeedback(points, feedback, reps, visible, goodForm, active)
+        return PoseFeedback(points, feedback, reps, visible, goodForm, active, imageWidth, imageHeight)
+    }
+
+    private companion object {
+        const val MIN_IN_FRAME_LIKELIHOOD = 0.5f
     }
 
     private fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float =

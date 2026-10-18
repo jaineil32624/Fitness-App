@@ -1,5 +1,6 @@
 package com.repwise.camera
 
+import com.repwise.domain.ExerciseType
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test

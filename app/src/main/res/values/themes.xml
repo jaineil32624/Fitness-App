@@ -1,10 +1,10 @@
 <resources>
-    <style name="Theme.Repwise" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:statusBarColor">#F5F6F2</item>
-        <item name="android:navigationBarColor">#F5F6F2</item>
+    <!-- Window theme shown before Compose draws; matches the app background to avoid a flash. -->
+    <style name="Theme.Repwise" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowLightStatusBar">true</item>
-        <item name="android:windowActionModeOverlay">true</item>
-        <item name="android:colorAccent">#327A5B</item>
+        <item name="android:colorAccent">@color/brand</item>
     </style>
 </resources>

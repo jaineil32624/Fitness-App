@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Back up workout history and settings so they survive a phone switch. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="sharedpref" path="repwise_data.xml" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="sharedpref" path="repwise_data.xml" />
+    </device-transfer>
+</data-extraction-rules>

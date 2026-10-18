@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A dumbbell inside a progress ring: one rep closer to the goal. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M54,24 A30,30 0 1,1 28.02,69"
+        android:strokeColor="#FF8EE0A9"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="round" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M33,43h4v22h-4z M38,46h4v16h-4z M42,51.5h24v5h-24z M66,46h4v16h-4z M71,43h4v22h-4z" />
+</vector>

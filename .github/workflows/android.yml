@@ -25,7 +25,7 @@ jobs:
         with:
           packages: platform-tools
       - name: Install Android SDK
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - name: Run unit tests
         run: bash ./gradlew --no-daemon :app:testDebugUnitTest
       - name: Configure release signing
